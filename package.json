@@ -19,7 +19,7 @@
   "scripts": {
     "start": "bun run src/cli.ts",
     "gh-grab": "bun run src/cli.ts",
-    "verify": "bun check && bun lint && bun fmt --check src"
+    "verify": "bun check && bun lint . && bun fmt --check src"
   },
   "engines": {
     "bun": ">=1.1.0"

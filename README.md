@@ -6,7 +6,7 @@ Built for the workflow: **edit locally → push → CI builds → grab binaries*
 
 ## Requirements
 
-- [Bun](https://bun.sh/) ≥ 1.1
+- [Bun](https://bun.sh/) ≥ 1.1 (CI / `bun run verify` needs a build with `bun lint` + `bun fmt`, e.g. canary)
 - [GitHub CLI](https://cli.github.com/) (`gh`) authenticated (`gh auth login`)
 
 ## Install

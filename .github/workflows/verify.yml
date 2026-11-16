@@ -17,7 +17,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # bun lint / bun fmt are available on canary (stable treats them as scripts)
+          bun-version: canary
+
+      - name: Bun version
+        run: bun --revision
 
       - name: Install
         run: bun install --frozen-lockfile

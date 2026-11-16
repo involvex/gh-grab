@@ -11,15 +11,19 @@ Built for the workflow: **edit locally → push → CI builds → grab binaries*
 
 ## Install
 
+Global (from GitHub):
+
+```bash
+bun add -g github:involvex/gh-grab
+gh-grab --help
+```
+
+Local checkout:
+
 ```bash
 bun install
 bun link
-```
-
-Or run without linking:
-
-```bash
-bun run src/cli.ts --help
+# or: bun run src/cli.ts --help
 ```
 
 ## Verify
@@ -30,7 +34,6 @@ bun lint       # lint
 bun fmt        # format
 bun run verify # check + lint + fmt --check
 ```
-
 
 ## Grab artifacts
 
@@ -46,20 +49,24 @@ Finds the latest **successful** workflow run and downloads its artifacts into `.
 
 ```bash
 gh-grab -p "*.exe" -p "*.apk"
+gh-grab --workflow gh-grab-rust
+gh-grab --into-target
 gh-grab --keep-all
 gh-grab --release -D ./downloads
 gh-grab --wait
 gh-grab -R owner/repo
 ```
 
-| Flag            | Meaning                                          |
-| --------------- | ------------------------------------------------ |
-| `-R, --repo`    | Another repository                               |
-| `-D, --dir`     | Download directory                               |
-| `-p, --pattern` | Glob filter (repeatable)                         |
-| `--release`     | Latest GitHub Release assets instead of a run    |
-| `--wait`        | Watch/poll until a successful run, then download |
-| `--keep-all`    | Do not filter downloaded files                   |
+| Flag | Meaning |
+| --- | --- |
+| `-R, --repo` | Another repository |
+| `-D, --dir` | Download directory (cache) |
+| `-p, --pattern` | Glob filter (repeatable) |
+| `--workflow <name>` | Only consider runs of this workflow |
+| `--into-target` | Copy kept `*.exe` into `$CARGO_TARGET_DIR/release` (fallback `./target/release`) |
+| `--release` | Latest GitHub Release assets instead of a run |
+| `--wait` | Watch/poll until a successful run, then download |
+| `--keep-all` | Do not filter downloaded files |
 
 ## Setup CI workflows
 
@@ -80,9 +87,9 @@ Templates are starters. Adjust paths for your layout, then:
 
 ```bash
 git add .github && git commit -m "ci: add gh-grab build workflows" && git push
-gh-grab --wait
+gh-grab --wait --workflow gh-grab-rust --into-target
 ```
 
 ## Strategy tip
 
-Keep source + registry on SSD. Prefer CI for `--release` binaries. Store downloaded artifacts on HDD if you need space. Use local `cargo check` / debug builds only when you need a debugger.
+Keep source + registry on SSD. Prefer CI for release binaries. Store downloaded artifacts on HDD if you need space (`--dir`). Use `--into-target` so tools that expect `target/release/*.exe` still find them. Use local `cargo check` / debug builds only when you need a debugger.

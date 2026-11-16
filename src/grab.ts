@@ -1,5 +1,5 @@
-import { mkdir, readdir, unlink, stat } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { copyFile, mkdir, readdir, unlink, stat } from "node:fs/promises";
+import { basename, join, relative } from "node:path";
 import {
   downloadRelease,
   downloadRun,
@@ -28,6 +28,8 @@ export type GrabOptions = {
   release?: boolean;
   wait?: boolean;
   keepAll?: boolean;
+  workflow?: string;
+  intoTarget?: boolean;
 };
 
 function expandEnvDir(dir: string | undefined): string {
@@ -35,8 +37,12 @@ function expandEnvDir(dir: string | undefined): string {
   return process.env.GH_GRAB_DIR || "./artifacts";
 }
 
+function cargoReleaseDir(): string {
+  const target = process.env.CARGO_TARGET_DIR || "./target";
+  return join(target, "release");
+}
+
 function matchGlob(name: string, pattern: string): boolean {
-  // Simple glob: * and ? only, case-insensitive for Windows friendliness
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*/g, ".*")
@@ -81,7 +87,7 @@ async function filterArtifacts(
   let removed = 0;
 
   for (const file of files) {
-    const base = file.split(/[/\\]/).pop() || file;
+    const base = basename(file);
     if (matchesAny(base, patterns)) {
       kept.push(relative(dir, file));
     } else {
@@ -97,11 +103,14 @@ function pickLatestSuccess(runs: GhRun[]): GhRun | undefined {
   return runs.find((r) => r.conclusion === "success");
 }
 
-async function waitForSuccess(repo: string): Promise<GhRun> {
-  console.log("Waiting for a successful workflow run...");
+async function waitForSuccess(repo: string, workflow?: string): Promise<GhRun> {
+  console.log(
+    workflow
+      ? `Waiting for a successful run of workflow "${workflow}"...`
+      : "Waiting for a successful workflow run...",
+  );
 
-  // Prefer watching an in-progress run if one exists
-  const recent = await listRecentRuns(repo, 10);
+  const recent = await listRecentRuns(repo, 10, workflow);
   const inProgress = recent.find(
     (r) =>
       r.status === "in_progress" ||
@@ -119,10 +128,9 @@ async function waitForSuccess(repo: string): Promise<GhRun> {
       // watch exits non-zero on failure; re-check below
     }
   } else {
-    // Poll until a completed success appears (or timeout ~30 min)
     const deadline = Date.now() + 30 * 60 * 1000;
     while (Date.now() < deadline) {
-      const completed = await listCompletedRuns(repo, 5);
+      const completed = await listCompletedRuns(repo, 5, workflow);
       const success = pickLatestSuccess(completed);
       if (success) return success;
       await Bun.sleep(15_000);
@@ -130,12 +138,64 @@ async function waitForSuccess(repo: string): Promise<GhRun> {
     throw new Error("Timed out waiting for a successful workflow run.");
   }
 
-  const completed = await listCompletedRuns(repo, 30);
+  const completed = await listCompletedRuns(repo, 30, workflow);
   const success = pickLatestSuccess(completed);
   if (!success) {
     throw new Error("No successful workflow run found after waiting.");
   }
   return success;
+}
+
+async function copyExesIntoTarget(
+  artifactDir: string,
+  keptRelPaths: string[],
+): Promise<string[]> {
+  const destDir = cargoReleaseDir();
+  await mkdir(destDir, { recursive: true });
+  const copied: string[] = [];
+
+  for (const rel of keptRelPaths) {
+    const base = basename(rel);
+    if (!matchGlob(base, "*.exe")) continue;
+    const src = join(artifactDir, rel);
+    const dest = join(destDir, base);
+    await copyFile(src, dest);
+    copied.push(dest);
+  }
+
+  return copied;
+}
+
+function printSummary(opts: {
+  run?: GhRun;
+  dir: string;
+  kept: string[];
+  removed?: number;
+  intoTargetPaths?: string[];
+}) {
+  if (opts.run?.url) {
+    console.log(`Run:  ${opts.run.url}`);
+  } else if (opts.run) {
+    console.log(`Run:  ${opts.run.databaseId} (${opts.run.name})`);
+  }
+  if (opts.removed !== undefined) {
+    console.log(
+      `Kept ${opts.kept.length} matching file(s), removed ${opts.removed} other file(s)`,
+    );
+  } else {
+    console.log(`Kept ${opts.kept.length} file(s) in ${opts.dir}`);
+  }
+  for (const f of opts.kept) {
+    console.log(`  ${join(opts.dir, f)}`);
+  }
+  if (opts.intoTargetPaths && opts.intoTargetPaths.length > 0) {
+    console.log(
+      `Copied ${opts.intoTargetPaths.length} exe(s) into cargo release:`,
+    );
+    for (const p of opts.intoTargetPaths) console.log(`  ${p}`);
+  } else if (opts.intoTargetPaths) {
+    console.log("No *.exe matched for --into-target");
+  }
 }
 
 export async function grab(options: GrabOptions = {}): Promise<void> {
@@ -149,11 +209,13 @@ export async function grab(options: GrabOptions = {}): Promise<void> {
       ? options.patterns
       : DEFAULT_PATTERNS;
   const keepAll = options.keepAll || patterns.includes("*");
+  const workflow = options.workflow;
 
   await mkdir(dir, { recursive: true });
 
   console.log(`Repo: ${repo}`);
   console.log(`Dir:  ${dir}`);
+  if (workflow) console.log(`Workflow: ${workflow}`);
 
   if (options.release) {
     console.log(
@@ -161,27 +223,33 @@ export async function grab(options: GrabOptions = {}): Promise<void> {
     );
     await downloadRelease(repo, dir, patterns);
     const files = await walkFiles(dir);
-    console.log(`Downloaded ${files.length} file(s) into ${dir}`);
-    for (const f of files) console.log(`  ${relative(dir, f)}`);
+    const kept = files.map((f) => relative(dir, f));
+    let intoTargetPaths: string[] | undefined;
+    if (options.intoTarget) {
+      intoTargetPaths = await copyExesIntoTarget(dir, kept);
+    }
+    printSummary({ dir, kept, intoTargetPaths });
     return;
   }
 
   let candidates: GhRun[];
 
   if (options.wait) {
-    candidates = [await waitForSuccess(repo)];
+    candidates = [await waitForSuccess(repo, workflow)];
   } else {
-    const runs = await listCompletedRuns(repo, 30);
+    const runs = await listCompletedRuns(repo, 30, workflow);
     candidates = runs.filter((r) => r.conclusion === "success");
   }
 
   if (candidates.length === 0) {
     throw new Error(
-      `No successful workflow run found for ${repo}. Push a build workflow or pass --wait / --release.`,
+      workflow
+        ? `No successful run found for workflow "${workflow}" in ${repo}.`
+        : `No successful workflow run found for ${repo}. Push a build workflow or pass --wait / --release.`,
     );
   }
 
-  let downloaded = false;
+  let downloadedRun: GhRun | undefined;
 
   for (const run of candidates) {
     const label = `${run.displayTitle || run.name} (${run.headBranch})`;
@@ -196,7 +264,7 @@ export async function grab(options: GrabOptions = {}): Promise<void> {
     );
     try {
       await downloadRun(repo, run.databaseId, dir);
-      downloaded = true;
+      downloadedRun = run;
       break;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -208,24 +276,36 @@ export async function grab(options: GrabOptions = {}): Promise<void> {
     }
   }
 
-  if (!downloaded) {
+  if (!downloadedRun) {
     throw new Error(
       `No workflow artifacts found among the latest successful runs for ${repo}. Try --release or trigger a build workflow.`,
     );
   }
 
+  let kept: string[];
+  let removed: number | undefined;
+
   if (keepAll) {
     const files = await walkFiles(dir);
-    console.log(`Kept all ${files.length} file(s) in ${dir}`);
-    for (const f of files) console.log(`  ${relative(dir, f)}`);
-    return;
+    kept = files.map((f) => relative(dir, f));
+  } else {
+    const filtered = await filterArtifacts(dir, patterns);
+    kept = filtered.kept;
+    removed = filtered.removed;
   }
 
-  const { kept, removed } = await filterArtifacts(dir, patterns);
-  console.log(
-    `Kept ${kept.length} matching file(s), removed ${removed} other file(s)`,
-  );
-  for (const f of kept) console.log(`  ${f}`);
+  let intoTargetPaths: string[] | undefined;
+  if (options.intoTarget) {
+    intoTargetPaths = await copyExesIntoTarget(dir, kept);
+  }
+
+  printSummary({
+    run: downloadedRun,
+    dir,
+    kept,
+    removed,
+    intoTargetPaths,
+  });
 
   try {
     await stat(dir);

@@ -13,6 +13,9 @@ Options:
   -D, --dir <path>        Download directory (default: ./artifacts or $GH_GRAB_DIR)
   -p, --pattern <glob>    Keep only matching files (repeatable)
                           Default: ${DEFAULT_PATTERNS.join(", ")}
+      --workflow <name>   Only consider runs of this workflow
+      --into-target       Copy kept *.exe into $CARGO_TARGET_DIR/release
+                          (fallback: ./target/release); keep cache under --dir
       --release           Download latest GitHub Release assets instead of a run
       --wait              Wait for an in-progress/queued run (or poll) then download
       --keep-all          Keep every downloaded file (same as -p '*')
@@ -26,6 +29,7 @@ Setup:
 
 Examples:
   gh-grab
+  gh-grab --workflow gh-grab-rust --into-target
   gh-grab -p "*.exe" -p "*.apk"
   gh-grab --release -D ./downloads
   gh-grab --wait -R owner/repo
@@ -41,6 +45,8 @@ type Parsed = {
   wait: boolean;
   keepAll: boolean;
   force: boolean;
+  workflow?: string;
+  intoTarget: boolean;
   presets: SetupPreset[];
 };
 
@@ -52,6 +58,7 @@ function parseArgs(argv: string[]): Parsed {
     wait: false,
     keepAll: false,
     force: false,
+    intoTarget: false,
     presets: [],
   };
 
@@ -81,6 +88,12 @@ function parseArgs(argv: string[]): Parsed {
       case "-p":
       case "--pattern":
         out.patterns.push(args[++i]!);
+        break;
+      case "--workflow":
+        out.workflow = args[++i];
+        break;
+      case "--into-target":
+        out.intoTarget = true;
         break;
       case "--release":
         out.release = true;
@@ -142,6 +155,8 @@ async function main() {
       release: parsed.release,
       wait: parsed.wait,
       keepAll: parsed.keepAll,
+      workflow: parsed.workflow,
+      intoTarget: parsed.intoTarget,
     });
   } catch (err) {
     console.error(err instanceof Error ? err.message : err);

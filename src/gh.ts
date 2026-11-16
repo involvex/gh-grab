@@ -91,8 +91,9 @@ export async function resolveRepo(repo?: string): Promise<string> {
 export async function listCompletedRuns(
   repo: string,
   limit = 30,
+  workflow?: string,
 ): Promise<GhRun[]> {
-  const { stdout } = await runGh([
+  const args = [
     "run",
     "list",
     "--repo",
@@ -103,15 +104,20 @@ export async function listCompletedRuns(
     String(limit),
     "--json",
     "databaseId,conclusion,status,name,headBranch,displayTitle,createdAt,url",
-  ]);
+  ];
+  if (workflow) {
+    args.push("--workflow", workflow);
+  }
+  const { stdout } = await runGh(args);
   return JSON.parse(stdout || "[]") as GhRun[];
 }
 
 export async function listRecentRuns(
   repo: string,
   limit = 10,
+  workflow?: string,
 ): Promise<GhRun[]> {
-  const { stdout } = await runGh([
+  const args = [
     "run",
     "list",
     "--repo",
@@ -120,7 +126,11 @@ export async function listRecentRuns(
     String(limit),
     "--json",
     "databaseId,conclusion,status,name,headBranch,displayTitle,createdAt,url",
-  ]);
+  ];
+  if (workflow) {
+    args.push("--workflow", workflow);
+  }
+  const { stdout } = await runGh(args);
   return JSON.parse(stdout || "[]") as GhRun[];
 }
 

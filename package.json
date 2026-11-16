@@ -5,12 +5,17 @@
     "type": "git",
     "url": "https://github.com/involvex/gh-grab.git"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Download GitHub Actions artifacts and scaffold CI build workflows",
   "type": "module",
   "bin": {
     "gh-grab": "./src/cli.ts"
   },
+  "files": [
+    "src/**/*",
+    "README.md",
+    "package.json"
+  ],
   "scripts": {
     "start": "bun run src/cli.ts",
     "gh-grab": "bun run src/cli.ts",

@@ -1,0 +1,44 @@
+name: gh-grab-tauri
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend deps
+        run: |
+          if (Test-Path package.json) { bun install }
+        shell: pwsh
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+        shell: pwsh
+
+      - name: Build Tauri app
+        run: |
+          if (Test-Path src-tauri) {
+            cargo tauri build
+          } else {
+            Write-Error "No src-tauri/ directory found. Adjust this workflow for your Tauri layout."
+          }
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-tauri
+          path: |
+            src-tauri/target/release/*.exe
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+          if-no-files-found: warn

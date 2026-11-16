@@ -1,0 +1,22 @@
+name: gh-grab-rust
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: target/release/*.exe
+          if-no-files-found: error

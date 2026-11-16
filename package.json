@@ -1,0 +1,26 @@
+{
+  "name": "@involvex/gh-grab",
+  "author": "Involvex",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/involvex/gh-grab.git"
+  },
+  "version": "0.1.0",
+  "description": "Download GitHub Actions artifacts and scaffold CI build workflows",
+  "type": "module",
+  "bin": {
+    "gh-grab": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "gh-grab": "bun run src/cli.ts",
+    "verify": "bun check && bun lint && bun fmt --check src"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "bun-types": "^1.4.4"
+  }
+}

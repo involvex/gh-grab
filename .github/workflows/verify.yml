@@ -26,5 +26,10 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Verify
-        run: bun run verify
+      - name: Verify (types + lint)
+        run: bun check && bun lint .
+
+      # bun fmt --check is sensitive to CRLF on windows-latest checkouts
+      - name: Verify (fmt)
+        if: runner.os != 'Windows'
+        run: bun fmt --check src
